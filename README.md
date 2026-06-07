@@ -1,6 +1,7 @@
 # MicBeam
 
 Stream a mic from one machine to another over the network. No cloud, no account.
+<img width="432" height="457" alt="image" src="https://github.com/user-attachments/assets/f6a4b044-3fbc-45dd-9056-966ecb70edbb" />
 
 Typical setup: Steam Deck (or any Linux box) **Send** → your PC **Receive** into [VB-CABLE](https://vb-audio.com/Cable/) so Discord, OBS, or whatever sees it as a normal mic input.
 
