@@ -36,9 +36,9 @@ sudo apt install libfuse2
 
 **Send** - stream from a local microphone to whoever you're connected to.
 
-**Receive** - play incoming audio on a local speaker or headphones.
+**Receive** — play incoming audio on a local output device. On Windows, point this at [VB-CABLE](https://vb-audio.com/Cable/) (or another virtual audio cable) if you want Discord, OBS, or a DAW to see the remote mic as an input, not just your speakers.
 
-One side sends, the other receives. Deck streams the mic, PC plays it - that’s the usual setup.
+One side sends, the other receives. Deck streams the mic, PC receives into a virtual cable — that’s the usual setup.
 
 Peers show up automatically on the LAN via UDP broadcast and mDNS. Tailscale nodes are picked up too. You can also punch in an IP manually if discovery misses something.
 
