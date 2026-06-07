@@ -1,0 +1,14 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CrossPlatformMicStreamer.Controls.VuMeter"
+             x:Name="Root"
+             Height="8">
+    <Grid x:Name="TrackGrid">
+        <Border Background="{DynamicResource VuMeterTrackBrush}"
+                CornerRadius="4" />
+        <Border x:Name="FillBar"
+                HorizontalAlignment="Left"
+                Background="{DynamicResource VuMeterFillBrush}"
+                CornerRadius="4" />
+    </Grid>
+</UserControl>

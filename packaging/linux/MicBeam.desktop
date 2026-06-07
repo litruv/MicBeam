@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MicBeam
+Comment=Stream microphone audio between machines on your LAN
+Exec=CrossPlatformMicStreamer
+Icon=MicBeam
+Categories=AudioVideo;
+Terminal=false
+StartupWMClass=CrossPlatformMicStreamer

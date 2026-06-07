@@ -1,0 +1,9 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CrossPlatformMicStreamer.Controls.LucideIcon"
+             Width="18"
+             Height="18">
+    <Viewbox Stretch="Uniform">
+        <Canvas x:Name="IconCanvas" Width="24" Height="24" />
+    </Viewbox>
+</UserControl>

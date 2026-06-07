@@ -1,0 +1,16 @@
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+APPDIR="${HERE}"
+export APPDIR
+export LD_LIBRARY_PATH="${APPDIR}/usr/bin:${LD_LIBRARY_PATH:-}"
+
+# Steam Deck / PipeWire: route audio through Pulse instead of raw ALSA/JACK.
+export PULSE_RUNTIME_PATH="${XDG_RUNTIME_DIR}/pulse"
+export PULSE_SERVER="${PULSE_SERVER:-unix:${XDG_RUNTIME_DIR}/pulse/native}"
+export JACK_NO_START_SERVER=1
+export JACK_NO_AUDIO_RESERVATION=1
+export JACK_PROMISCUOUS_SERVER=
+export ALSA_LOG_LEVEL=0
+
+cd "${APPDIR}/usr/bin" || exit 1
+exec ./CrossPlatformMicStreamer "$@"

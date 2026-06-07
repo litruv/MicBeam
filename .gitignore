@@ -1,0 +1,29 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Dd]ist/
+[Pp]ublish/
+[Tt]ools/
+*.AppImage
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and temp
+*.log
+.tmp-lucide/
+.tmp-lucide.zip
+*.zip
+
+# NuGet fallback (if any)
+packages/
