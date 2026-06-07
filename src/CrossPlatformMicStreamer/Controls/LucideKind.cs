@@ -17,4 +17,8 @@ public enum LucideKind
     Pencil,
     Lock,
     LockOpen,
+    Layers,
+    Trash2,
+    TrendingUp,
+    TrendingDown,
 }

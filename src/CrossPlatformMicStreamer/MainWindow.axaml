@@ -60,7 +60,7 @@
             </Grid>
 
             <ListBox ItemsSource="{Binding Peers}"
-                     SelectedItem="{Binding SelectedPeer}"
+                     SelectedItem="{Binding SelectedPeer, Mode=TwoWay}"
                      Background="Transparent"
                      BorderThickness="0"
                      MinHeight="72"
@@ -182,63 +182,176 @@
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1"
                 CornerRadius="8">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <StackPanel Grid.Column="0"
-                            Orientation="Horizontal"
-                            Spacing="6"
-                            VerticalAlignment="Center">
-                    <controls:LucideIcon Width="14"
-                                         Height="14"
-                                         VerticalAlignment="Center"
-                                         Kind="{Binding ConnectionPhase, Converter={x:Static conv:ConnectionPhaseToIconConverter.Instance}}"
-                                         Foreground="{Binding ConnectionPhase, Converter={x:Static conv:ConnectionPhaseToBrushConverter.Instance}}" />
-                    <TextBlock Text="{Binding FooterText}"
-                               VerticalAlignment="Center"
-                               FontSize="12"
-                               Foreground="{StaticResource TextMutedBrush}" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="2"
-                            Orientation="Horizontal"
-                            Spacing="4"
-                            VerticalAlignment="Center">
-                    <TextBlock Text="buf"
-                               VerticalAlignment="Center"
-                               FontSize="12"
-                               Foreground="{StaticResource TextMutedBrush}" />
-                    <TextBlock Text="{Binding BufferMs}"
-                               IsVisible="{Binding !IsEditingBuffer}"
-                               VerticalAlignment="Center"
-                               FontSize="12"
-                               MinWidth="20"
-                               TextAlignment="Right"
-                               Foreground="{StaticResource TextPrimaryBrush}" />
-                    <TextBox x:Name="BufferEditTextBox"
-                             Text="{Binding BufferEditText}"
-                             IsVisible="{Binding IsEditingBuffer}"
-                             Width="48"
-                             VerticalAlignment="Center"
-                             KeyDown="OnBufferEditKeyDown" />
-                    <TextBlock Text="ms"
-                               VerticalAlignment="Center"
-                               FontSize="12"
-                               Foreground="{StaticResource TextMutedBrush}" />
-                    <Button Classes="IconButton Compact"
-                            Click="OnBufferEditClicked"
-                            ToolTip.Tip="Edit buffer">
-                        <controls:LucideIcon Kind="Pencil"
-                                             Width="14"
-                                             Height="14"
-                                             Foreground="{StaticResource TextMutedBrush}" />
-                    </Button>
-                    <ToggleButton Classes="IconToggle Compact"
-                                  IsChecked="{Binding IsBufferLocked}"
-                                  ToolTip.Tip="Lock buffer">
+            <Grid RowDefinitions="Auto,Auto">
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto">
+                    <StackPanel Grid.Column="0"
+                                Orientation="Horizontal"
+                                Spacing="6"
+                                VerticalAlignment="Center">
                         <controls:LucideIcon Width="14"
                                              Height="14"
-                                             Kind="{Binding IsBufferLocked, Converter={x:Static conv:BoolToLucideKindConverter.Instance}, ConverterParameter=Lock}" />
-                    </ToggleButton>
-                </StackPanel>
+                                             VerticalAlignment="Center"
+                                             Kind="{Binding ConnectionPhase, Converter={x:Static conv:ConnectionPhaseToIconConverter.Instance}}"
+                                             Foreground="{Binding ConnectionPhase, Converter={x:Static conv:ConnectionPhaseToBrushConverter.Instance}}" />
+                        <TextBlock Text="{Binding FooterText}"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextMutedBrush}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2"
+                                Orientation="Horizontal"
+                                Spacing="4"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="buf"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextMutedBrush}" />
+                        <TextBlock Text="{Binding BufferMs}"
+                                   IsVisible="{Binding !IsEditingBuffer}"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   MinWidth="20"
+                                   TextAlignment="Right"
+                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                        <TextBox x:Name="BufferEditTextBox"
+                                 Text="{Binding BufferEditText}"
+                                 IsVisible="{Binding IsEditingBuffer}"
+                                 Width="48"
+                                 VerticalAlignment="Center"
+                                 KeyDown="OnBufferEditKeyDown" />
+                        <TextBlock Text="ms"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextMutedBrush}" />
+                        <Button Classes="IconButton Compact"
+                                Click="OnBufferEditClicked"
+                                ToolTip.Tip="Edit buffer">
+                            <controls:LucideIcon Kind="Pencil"
+                                                 Width="14"
+                                                 Height="14"
+                                                 Foreground="{StaticResource TextMutedBrush}" />
+                        </Button>
+                        <ToggleButton Classes="IconToggle Compact"
+                                      IsChecked="{Binding IsBufferLocked}"
+                                      ToolTip.Tip="Lock buffer">
+                            <controls:LucideIcon Width="14"
+                                                 Height="14"
+                                                 Kind="{Binding IsBufferLocked, Converter={x:Static conv:BoolToLucideKindConverter.Instance}, ConverterParameter=Lock}" />
+                        </ToggleButton>
+                    </StackPanel>
+                </Grid>
+
+                <Grid Grid.Row="1"
+                      ColumnDefinitions="Auto,*,Auto,*,Auto,*,Auto,*,Auto"
+                      Margin="0,6,0,0"
+                      IsVisible="{Binding ShowBufferTestStats}">
+                    <StackPanel Grid.Column="0"
+                                Orientation="Horizontal"
+                                Spacing="5"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Underruns: output starved (needs more buffer)">
+                        <controls:LucideIcon Kind="VolumeX"
+                                             Width="13"
+                                             Height="13"
+                                             VerticalAlignment="Center"
+                                             Foreground="{Binding BufferStatUnderrunsOver, Converter={x:Static conv:BoolToStatForegroundConverter.Instance}}" />
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="0">
+                            <TextBlock Text="{Binding BufferStatUnderruns}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                            <TextBlock Text="/" FontSize="12" Foreground="{StaticResource TextMutedBrush}" />
+                            <TextBlock Text="{Binding BufferStatUnderrunLimit}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextMutedBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2"
+                                Orientation="Horizontal"
+                                Spacing="5"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Saturated: incoming queue full, chunks dropped">
+                        <controls:LucideIcon Kind="Layers"
+                                             Width="13"
+                                             Height="13"
+                                             VerticalAlignment="Center"
+                                             Foreground="{Binding BufferStatSaturatedOver, Converter={x:Static conv:BoolToStatForegroundConverter.Instance}}" />
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="0">
+                            <TextBlock Text="{Binding BufferStatSaturated}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                            <TextBlock Text="/" FontSize="12" Foreground="{StaticResource TextMutedBrush}" />
+                            <TextBlock Text="{Binding BufferStatSaturatedLimit}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextMutedBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="4"
+                                Orientation="Horizontal"
+                                Spacing="5"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Dropped: capture/send queue overflow">
+                        <controls:LucideIcon Kind="Trash2"
+                                             Width="13"
+                                             Height="13"
+                                             VerticalAlignment="Center"
+                                             Foreground="{Binding BufferStatDropsOver, Converter={x:Static conv:BoolToStatForegroundConverter.Instance}}" />
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="0">
+                            <TextBlock Text="{Binding BufferStatDrops}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                            <TextBlock Text="/" FontSize="12" Foreground="{StaticResource TextMutedBrush}" />
+                            <TextBlock Text="{Binding BufferStatDropLimit}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextMutedBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="6"
+                                Orientation="Horizontal"
+                                Spacing="5"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Bad windows toward +5 ms buffer increase">
+                        <controls:LucideIcon Kind="TrendingUp"
+                                             Width="13"
+                                             Height="13"
+                                             VerticalAlignment="Center"
+                                             Foreground="{StaticResource TextMutedBrush}" />
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="0">
+                            <TextBlock Text="{Binding BufferStatBadWindows}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                            <TextBlock Text="/" FontSize="12" Foreground="{StaticResource TextMutedBrush}" />
+                            <TextBlock Text="{Binding BufferStatBadLimit}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextMutedBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="8"
+                                Orientation="Horizontal"
+                                Spacing="5"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Stable windows toward −5 ms buffer decrease">
+                        <controls:LucideIcon Kind="TrendingDown"
+                                             Width="13"
+                                             Height="13"
+                                             VerticalAlignment="Center"
+                                             Foreground="{StaticResource TextMutedBrush}" />
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="0">
+                            <TextBlock Text="{Binding BufferStatStableWindows}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                            <TextBlock Text="/" FontSize="12" Foreground="{StaticResource TextMutedBrush}" />
+                            <TextBlock Text="{Binding BufferStatStableLimit}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextMutedBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
             </Grid>
         </Border>
     </Grid>

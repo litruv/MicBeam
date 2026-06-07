@@ -1,95 +1,33 @@
 # MicBeam
 
-Use a mic on one machine, hear it on another. MicBeam captures your microphone and sends it over the network as uncompressed PCM - handy when you want your Steam Deck mic on your Windows PC, or any other Windows/Linux combo on the same network.
+Stream a mic from one machine to another over the network. No cloud, no account.
 
-No accounts, no cloud relay. Pick a peer, pick Send or Receive, pick your audio device.
+Typical setup: Steam Deck (or any Linux box) **Send** → your PC **Receive** into [VB-CABLE](https://vb-audio.com/Cable/) so Discord, OBS, or whatever sees it as a normal mic input.
+
+MicBeam remembers your last peer, mode, devices, and format — it reconnects on launch.
 
 ## Install
 
-Download the latest release:
-
 **https://github.com/litruv/micbeam/releases**
 
-### Windows
+- **Windows** — unzip, run `CrossPlatformMicStreamer.exe`. Allow UDP **18240** and TCP **18241** if the firewall asks.
+- **Linux** — `chmod +x MicBeam-x86_64.AppImage && ./MicBeam-x86_64.AppImage` (needs `libfuse2` on some distros).
 
-Grab the Windows zip, unpack, run `CrossPlatformMicStreamer.exe`.
+## Build
 
-Allow UDP **18240** and TCP **18241** through the firewall if Windows prompts you.
-
-### Linux
-
-Grab `MicBeam-x86_64.AppImage`, make it executable, run it:
-
-```bash
-chmod +x MicBeam-x86_64.AppImage
-./MicBeam-x86_64.AppImage
-```
-
-If FUSE isn't installed:
-
-```bash
-sudo apt install libfuse2
-./MicBeam-x86_64.AppImage --appimage-extract-and-run
-```
-
-## What it does
-
-**Send** - stream from a local microphone to whoever you're connected to.
-
-**Receive** — play incoming audio on a local output device. On Windows, point this at [VB-CABLE](https://vb-audio.com/Cable/) (or another virtual audio cable) if you want Discord, OBS, or a DAW to see the remote mic as an input, not just your speakers.
-
-One side sends, the other receives. Deck streams the mic, PC receives into a virtual cable — that’s the usual setup.
-
-Peers show up automatically on the LAN via UDP broadcast and mDNS. Tailscale nodes are picked up too. You can also punch in an IP manually if discovery misses something.
-
-Audio is 48 kHz mono PCM at 16, 24, or 32-bit float - pick what you want under Format. Low latency matters here, so there’s an adaptive buffer on the receive side that steps up when playback underruns and steps down when things are stable. You can set the buffer yourself and lock it if auto-tuning isn’t what you want.
-
-VU meters on send and receive so you can see levels without guessing.
-
-## Features
-
-- Send / Receive modes with separate device pickers
-- LAN discovery (UDP + mDNS) and Tailscale peer detection
-- Manual peer by IP
-- 16 / 24 / 32-bit PCM format selector
-- Adaptive latency buffer (5–120 ms) with manual override and lock
-- Input and output level meters
-- Windows and Linux (AppImage, no .NET install needed on Linux)
-
-## Firewall
-
-Both machines need inbound **UDP 18240** (discovery) and **TCP 18241** (audio).
-
-## From source
-
-Requires .NET 8 SDK.
+.NET 8 SDK required.
 
 ```bash
 dotnet run --project src/CrossPlatformMicStreamer
 ```
 
-### Build releases
-
-**Windows zip** (on Windows, PowerShell):
+Release packages:
 
 ```powershell
-.\packaging\build-windows.ps1
+.\packaging\build-windows.ps1          # dist/MicBeam-win-x64.zip
+.\packaging\build-appimage.ps1         # dist/MicBeam-x86_64.AppImage (Windows + WSL)
 ```
-
-Output: `dist/MicBeam-win-x64.zip`
-
-**Linux AppImage** (on Linux):
 
 ```bash
-bash packaging/build-linux.sh
+bash packaging/build-linux.sh          # same AppImage, native Linux
 ```
-
-Needs Python 3 with Pillow (`pip install pillow`). Output: `dist/MicBeam-x86_64.AppImage`
-
-**Linux AppImage** (on Windows, via WSL + .NET SDK):
-
-```powershell
-.\packaging\build-appimage.ps1
-```
-
-Same output: `dist/MicBeam-x86_64.AppImage`

@@ -17,6 +17,10 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private readonly SemaphoreSlim _reconnectLock = new(1, 1);
     private readonly LocalIdentity _identity;
     private readonly AdaptiveLatencySettings _latencySettings = new();
+    private UiPreferences _loadedPreferences = new();
+    private bool _applyingPreferences;
+    private bool _uiPreferencesApplied;
+    private bool _suppressSessionRefresh;
 
     private SessionMode _sessionMode = SessionMode.Receive;
     private bool _streamingMicForPeer;
@@ -41,6 +45,20 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private bool _isEditingBuffer;
     private string _bufferEditText = AdaptiveLatencySettings.DefaultLatencyMs.ToString();
     private AudioBitDepth _selectedBitDepth = AudioBitDepth.Bits32;
+    private bool _showBufferTestStats;
+    private int _lastEvalUnderruns;
+    private int _lastEvalSaturated;
+    private int _lastEvalDrops;
+    private bool _hasLastEval;
+    private int _bufferStatUnderruns;
+    private int _bufferStatSaturated;
+    private int _bufferStatDrops;
+    private int _bufferStatBadWindows;
+    private int _bufferStatStableWindows;
+    private bool _bufferStatUnderrunsOver;
+    private bool _bufferStatSaturatedOver;
+    private bool _bufferStatDropsOver;
+    private bool _bufferStatIsLive;
 
     private bool LocalSendActive =>
         _sessionMode == SessionMode.Send &&
@@ -77,6 +95,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             }
 
             _latencySettings.BitDepth = value;
+            SavePreferences();
             _ = RefreshSessionAsync();
         }
     }
@@ -94,6 +113,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             RaisePropertyChanged(nameof(IsSendMode));
             RaisePropertyChanged(nameof(IsReceiveMode));
             UpdateDiscoveryScanning();
+            SavePreferences();
             _ = RefreshSessionAsync();
         }
     }
@@ -134,6 +154,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                 return;
             }
 
+            SavePreferences();
             _ = RefreshSessionAsync();
         }
     }
@@ -148,6 +169,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                 return;
             }
 
+            SavePreferences();
             _ = RefreshSessionAsync();
         }
     }
@@ -157,6 +179,15 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         get => _selectedPeer;
         set
         {
+            if (value == null &&
+                _selectedPeer != null &&
+                ShouldKeepSavedPeerSelection())
+            {
+                SessionLog.Write("Ignoring spurious peer deselect.");
+                ResyncSelectedPeerBinding();
+                return;
+            }
+
             if (!SetProperty(ref _selectedPeer, value))
             {
                 return;
@@ -165,6 +196,18 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             _selectedPeerId = value?.Id;
             RaisePropertyChanged(nameof(HasSelectedPeer));
             UpdateDiscoveryScanning();
+
+            if (value != null)
+            {
+                RememberPeerInPreferences(value);
+            }
+
+            if (_applyingPreferences || _suppressSessionRefresh)
+            {
+                return;
+            }
+
+            SavePreferences();
             _ = RefreshSessionAsync();
         }
     }
@@ -201,12 +244,92 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                 return;
             }
 
-            if (!value)
+            if (value)
+            {
+                _manualBufferMs = SnapBufferMs(
+                    _audioPathsRunning ? _latencySettings.TargetLatencyMs : BufferMs);
+                _bufferEditText = _manualBufferMs.ToString();
+                RaisePropertyChanged(nameof(BufferEditText));
+            }
+            else
             {
                 _stableIntervalCount = 0;
                 _badIntervalCount = 0;
             }
+
+            SavePreferences();
+            UpdateBufferTestStats();
         }
+    }
+
+    public bool ShowBufferTestStats
+    {
+        get => _showBufferTestStats;
+        private set => SetProperty(ref _showBufferTestStats, value);
+    }
+
+    public int BufferStatUnderruns
+    {
+        get => _bufferStatUnderruns;
+        private set => SetProperty(ref _bufferStatUnderruns, value);
+    }
+
+    public int BufferStatSaturated
+    {
+        get => _bufferStatSaturated;
+        private set => SetProperty(ref _bufferStatSaturated, value);
+    }
+
+    public int BufferStatDrops
+    {
+        get => _bufferStatDrops;
+        private set => SetProperty(ref _bufferStatDrops, value);
+    }
+
+    public int BufferStatBadWindows
+    {
+        get => _bufferStatBadWindows;
+        private set => SetProperty(ref _bufferStatBadWindows, value);
+    }
+
+    public int BufferStatStableWindows
+    {
+        get => _bufferStatStableWindows;
+        private set => SetProperty(ref _bufferStatStableWindows, value);
+    }
+
+    public int BufferStatUnderrunLimit => _latencySettings.MinUnderrunsToIncrease;
+
+    public int BufferStatSaturatedLimit => _latencySettings.MinSaturatedToIncrease;
+
+    public int BufferStatDropLimit => _latencySettings.MinUnderrunsToIncrease;
+
+    public int BufferStatBadLimit => _latencySettings.BadIntervalsBeforeIncrease;
+
+    public int BufferStatStableLimit => _latencySettings.StableIntervalsBeforeDecrease;
+
+    public bool BufferStatUnderrunsOver
+    {
+        get => _bufferStatUnderrunsOver;
+        private set => SetProperty(ref _bufferStatUnderrunsOver, value);
+    }
+
+    public bool BufferStatSaturatedOver
+    {
+        get => _bufferStatSaturatedOver;
+        private set => SetProperty(ref _bufferStatSaturatedOver, value);
+    }
+
+    public bool BufferStatDropsOver
+    {
+        get => _bufferStatDropsOver;
+        private set => SetProperty(ref _bufferStatDropsOver, value);
+    }
+
+    public bool BufferStatIsLive
+    {
+        get => _bufferStatIsLive;
+        private set => SetProperty(ref _bufferStatIsLive, value);
     }
 
     public bool IsEditingBuffer
@@ -256,15 +379,53 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
         _latencySettings.BitDepth = _selectedBitDepth;
 
+        _loadedPreferences = UiPreferencesStore.Load();
         LoadDevices();
         _audioConnection.StartListening();
         _discovery.Start();
 
         UpdateFooterText();
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => SavePreferences();
         _ = PeerCleanupLoopAsync(_sessionCts.Token);
         _ = ConnectionMaintenanceLoopAsync(_sessionCts.Token);
         _ = MetricsUpdateLoopAsync(_sessionCts.Token);
         _ = AdaptiveLatencyLoopAsync(_sessionCts.Token);
+        _ = AutoConnectLoopAsync(_sessionCts.Token);
+    }
+
+    public void CompleteUiInitialization()
+    {
+        if (_uiPreferencesApplied)
+        {
+            ResyncUiBindings();
+            ScheduleAutoConnect();
+            return;
+        }
+
+        ApplyLoadedPreferences();
+        _uiPreferencesApplied = true;
+        ResyncUiBindings();
+        SavePreferences();
+        ScheduleAutoConnect();
+    }
+
+    private void ScheduleAutoConnect()
+    {
+        if (!_loadedPreferences.AutoConnect || !WantsSession)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!_loadedPreferences.AutoConnect || !WantsSession || _selectedPeer == null)
+            {
+                return;
+            }
+
+            SessionLog.Write($"Auto-connecting to {_selectedPeer.DisplayName}...");
+            _ = RefreshSessionAsync();
+        }, DispatcherPriority.Loaded);
     }
 
     public void AddManualPeer(string addressInput)
@@ -296,6 +457,60 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         _discovery.ProbeNow();
     }
 
+    private void UpdateBufferTestStats()
+    {
+        if (!_audioPathsRunning || !LocalReceiveActive || IsBufferLocked)
+        {
+            if (ShowBufferTestStats)
+            {
+                ShowBufferTestStats = false;
+            }
+
+            return;
+        }
+
+        ShowBufferTestStats = true;
+
+        var inGracePeriod = DateTime.UtcNow - _lastAudioRestartUtc <
+            TimeSpan.FromSeconds(_latencySettings.GracePeriodAfterRestartSeconds);
+
+        int underruns;
+        int saturated;
+        int drops;
+
+        if (inGracePeriod)
+        {
+            underruns = _hasLastEval ? _lastEvalUnderruns : 0;
+            saturated = _hasLastEval ? _lastEvalSaturated : 0;
+            drops = _hasLastEval ? _lastEvalDrops : 0;
+            BufferStatIsLive = false;
+        }
+        else
+        {
+            underruns = _playback.PeekUnderrunCount();
+            saturated = _playback.PeekSaturatedTicks();
+            drops = _capture.PeekDroppedChunkCount();
+            BufferStatIsLive = true;
+        }
+
+        BufferStatUnderruns = underruns;
+        BufferStatSaturated = saturated;
+        BufferStatDrops = drops;
+        BufferStatBadWindows = _badIntervalCount;
+        BufferStatStableWindows = _stableIntervalCount;
+        BufferStatUnderrunsOver = underruns >= _latencySettings.MinUnderrunsToIncrease;
+        BufferStatSaturatedOver = saturated >= _latencySettings.MinSaturatedToIncrease;
+        BufferStatDropsOver = drops >= _latencySettings.MinUnderrunsToIncrease;
+    }
+
+    private void RecordBufferEvaluation(int underruns, int saturated, int drops)
+    {
+        _lastEvalUnderruns = underruns;
+        _lastEvalSaturated = saturated;
+        _lastEvalDrops = drops;
+        _hasLastEval = true;
+    }
+
     private async Task MetricsUpdateLoopAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -314,13 +529,17 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                 {
                     _networkMs = networkMs;
                     BufferMs = bufferMs;
-                    if (!IsBufferLocked)
+                    if (!IsBufferLocked && _manualBufferMs != bufferMs)
                     {
                         _manualBufferMs = bufferMs;
+                        _bufferEditText = bufferMs.ToString();
+                        RaisePropertyChanged(nameof(BufferEditText));
                     }
 
                     UpdateFooterText();
                 }
+
+                UpdateBufferTestStats();
             });
 
             await Task.Delay(50, cancellationToken);
@@ -359,6 +578,8 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             var drops = _capture.ConsumeDroppedChunkCount();
             var needsMoreBuffer = _latencySettings.NeedsMoreBuffer(underruns, saturated, drops);
 
+            RecordBufferEvaluation(underruns, saturated, drops);
+
             if (needsMoreBuffer)
             {
                 _stableIntervalCount = 0;
@@ -390,6 +611,12 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                     }
                 }
             }
+
+            var evalSummary =
+                $"eval u {underruns} s {saturated} d {drops} -> " +
+                (needsMoreBuffer ? "bad" : "ok");
+            Dispatcher.UIThread.Post(UpdateBufferTestStats);
+            SessionLog.Write(evalSummary);
         }
     }
 
@@ -437,11 +664,14 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     private void ApplyManualBufferMs(int bufferMs)
     {
         _manualBufferMs = bufferMs;
+        _bufferEditText = bufferMs.ToString();
+        RaisePropertyChanged(nameof(BufferEditText));
 
         if (_latencySettings.TargetLatencyMs == bufferMs)
         {
             BufferMs = bufferMs;
             UpdateFooterText();
+            SavePreferences();
             return;
         }
 
@@ -451,6 +681,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         _badIntervalCount = 0;
         _audioConnection.UpdateFrameDuration(_latencySettings.FrameDurationMs);
         UpdateFooterText();
+        SavePreferences();
         _ = ApplyBufferChangeAsync();
     }
 
@@ -464,6 +695,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         }
 
         await SendLatencySyncAsync();
+        SavePreferences();
     }
 
     private void OnConnectionLost(string? address)
@@ -525,8 +757,401 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             OutputDevices.Add(device);
         }
 
-        SelectedInputDevice = PortAudioDeviceEnumerator.GetDefaultInputDevice();
-        SelectedOutputDevice = PortAudioDeviceEnumerator.GetDefaultOutputDevice();
+        _selectedInputDevice = ResolveDeviceInList(
+            InputDevices,
+            PortAudioDeviceEnumerator.GetDefaultInputDevice());
+        _selectedOutputDevice = ResolveDeviceInList(
+            OutputDevices,
+            PortAudioDeviceEnumerator.GetDefaultOutputDevice());
+    }
+
+    private void ApplyLoadedPreferences()
+    {
+        _applyingPreferences = true;
+
+        try
+        {
+            if (Enum.TryParse(_loadedPreferences.SessionMode, out SessionMode mode))
+            {
+                _sessionMode = mode;
+            }
+
+            _selectedBitDepth = AudioBitDepthExtensions.ParseWireValue(_loadedPreferences.BitDepth);
+            _latencySettings.BitDepth = _selectedBitDepth;
+
+            _manualBufferMs = SnapBufferMs(_loadedPreferences.ManualBufferMs);
+            BufferMs = _manualBufferMs;
+            _bufferEditText = _manualBufferMs.ToString();
+            _isBufferLocked = _loadedPreferences.IsBufferLocked;
+
+            var savedInput = FindSavedDevice(
+                InputDevices,
+                _loadedPreferences.InputDeviceIndex,
+                _loadedPreferences.InputDeviceName);
+            if (savedInput != null)
+            {
+                _selectedInputDevice = savedInput;
+            }
+
+            var savedOutput = FindSavedDevice(
+                OutputDevices,
+                _loadedPreferences.OutputDeviceIndex,
+                _loadedPreferences.OutputDeviceName);
+            if (savedOutput != null)
+            {
+                _selectedOutputDevice = savedOutput;
+            }
+
+            RestoreSavedPeer(_loadedPreferences);
+            TrySelectSavedPeer(_loadedPreferences);
+        }
+        finally
+        {
+            _applyingPreferences = false;
+        }
+
+        SessionLog.Write(
+            $"Applied preferences: mode={_sessionMode}, " +
+            $"input={_selectedInputDevice?.Name ?? "none"}, " +
+            $"output={_selectedOutputDevice?.Name ?? "none"}, " +
+            $"peer={_selectedPeer?.DisplayName ?? "none"}, " +
+            $"bitDepth={_selectedBitDepth}, buffer={_manualBufferMs} ms");
+
+        UpdateDiscoveryScanning();
+    }
+
+    private void ResyncUiBindings()
+    {
+        _suppressSessionRefresh = true;
+
+        try
+        {
+            _selectedInputDevice = RebindDeviceSelection(InputDevices, _selectedInputDevice);
+            _selectedOutputDevice = RebindDeviceSelection(OutputDevices, _selectedOutputDevice);
+
+            if (_selectedPeer != null)
+            {
+                ResyncSelectedPeerBinding();
+            }
+        }
+        finally
+        {
+            _suppressSessionRefresh = false;
+        }
+
+        RaisePropertyChanged(nameof(SessionMode));
+        RaisePropertyChanged(nameof(IsSendMode));
+        RaisePropertyChanged(nameof(IsReceiveMode));
+        RaisePropertyChanged(nameof(SelectedBitDepth));
+        RaisePropertyChanged(nameof(BufferEditText));
+        RaisePropertyChanged(nameof(BufferMs));
+        RaisePropertyChanged(nameof(IsBufferLocked));
+        RaisePropertyChanged(nameof(SelectedInputDevice));
+        RaisePropertyChanged(nameof(SelectedOutputDevice));
+        RaisePropertyChanged(nameof(SelectedPeer));
+        RaisePropertyChanged(nameof(HasSelectedPeer));
+    }
+
+    private static AudioDeviceInfo? RebindDeviceSelection(
+        IEnumerable<AudioDeviceInfo> devices,
+        AudioDeviceInfo? current)
+    {
+        var deviceList = devices as IList<AudioDeviceInfo> ?? devices.ToList();
+        if (deviceList.Count == 0)
+        {
+            return null;
+        }
+
+        if (current == null)
+        {
+            return deviceList[0];
+        }
+
+        return deviceList.FirstOrDefault(device => device.Index == current.Index && device.Name == current.Name)
+               ?? deviceList.FirstOrDefault(device => device.Index == current.Index)
+               ?? deviceList[0];
+    }
+
+    private void RestoreSavedPeer(UiPreferences preferences)
+    {
+        if (string.IsNullOrWhiteSpace(preferences.PeerAddress) &&
+            string.IsNullOrWhiteSpace(preferences.PeerId))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(preferences.PeerAddress))
+        {
+            var address = NetworkEndpoints.NormalizeAddressString(preferences.PeerAddress);
+            if (!System.Net.IPAddress.TryParse(address, out _))
+            {
+                return;
+            }
+
+            RegisterSavedPeerAddress(preferences);
+
+            var peerId = string.IsNullOrWhiteSpace(preferences.PeerId)
+                ? $"manual:{address}"
+                : preferences.PeerId;
+            var peerName = string.IsNullOrWhiteSpace(preferences.PeerName)
+                ? address
+                : preferences.PeerName;
+
+            var stubPeer = new PeerInfo(
+                peerId,
+                peerName,
+                address,
+                NetworkConstants.AudioPort,
+                DateTime.UtcNow,
+                IsManual: true);
+
+            SetSelectedPeerSilently(UpsertPeer(stubPeer));
+            return;
+        }
+
+        TrySelectSavedPeer(preferences);
+    }
+
+    private void SavePreferences()
+    {
+        if (_applyingPreferences)
+        {
+            return;
+        }
+
+        var peerId = _selectedPeerId ?? _loadedPreferences.PeerId;
+        var peerAddress = _selectedPeer == null
+            ? _loadedPreferences.PeerAddress
+            : NetworkEndpoints.NormalizeAddressString(_selectedPeer.Address);
+        var peerName = _selectedPeer?.Name ?? _loadedPreferences.PeerName;
+
+        _loadedPreferences = new UiPreferences
+        {
+            SessionMode = _sessionMode.ToString(),
+            PeerId = peerId,
+            PeerAddress = peerAddress,
+            PeerName = peerName,
+            InputDeviceIndex = _selectedInputDevice?.Index,
+            InputDeviceName = _selectedInputDevice?.Name,
+            OutputDeviceIndex = _selectedOutputDevice?.Index,
+            OutputDeviceName = _selectedOutputDevice?.Name,
+            BitDepth = _selectedBitDepth.ToWireValue(),
+            ManualBufferMs = _manualBufferMs,
+            IsBufferLocked = _isBufferLocked,
+            AutoConnect = true,
+        };
+
+        UiPreferencesStore.Save(_loadedPreferences);
+    }
+
+    private bool ShouldKeepSavedPeerSelection() =>
+        _loadedPreferences.AutoConnect &&
+        (!string.IsNullOrWhiteSpace(_loadedPreferences.PeerAddress) ||
+         !string.IsNullOrWhiteSpace(_loadedPreferences.PeerId));
+
+    private void RememberPeerInPreferences(PeerInfo peer)
+    {
+        _loadedPreferences.PeerId = peer.Id;
+        _loadedPreferences.PeerAddress = NetworkEndpoints.NormalizeAddressString(peer.Address);
+        _loadedPreferences.PeerName = peer.Name;
+    }
+
+    private void ResyncSelectedPeerBinding()
+    {
+        if (_selectedPeer == null)
+        {
+            return;
+        }
+
+        var listedPeer = Peers.FirstOrDefault(peer => peer.Id == _selectedPeer.Id);
+        if (listedPeer == null &&
+            !string.IsNullOrWhiteSpace(_loadedPreferences.PeerAddress))
+        {
+            RestoreSavedPeer(_loadedPreferences);
+            listedPeer = _selectedPeer;
+        }
+
+        if (listedPeer == null)
+        {
+            return;
+        }
+
+        _suppressSessionRefresh = true;
+        try
+        {
+            _selectedPeer = listedPeer;
+            _selectedPeerId = listedPeer.Id;
+        }
+        finally
+        {
+            _suppressSessionRefresh = false;
+        }
+
+        RaisePropertyChanged(nameof(SelectedPeer));
+        RaisePropertyChanged(nameof(HasSelectedPeer));
+    }
+
+    private static AudioDeviceInfo? FindSavedDevice(
+        IEnumerable<AudioDeviceInfo> devices,
+        int? index,
+        string? name)
+    {
+        if (index.HasValue)
+        {
+            var byIndex = devices.FirstOrDefault(device => device.Index == index.Value);
+            if (byIndex != null)
+            {
+                return byIndex;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            var exact = devices.FirstOrDefault(device => device.Name == name);
+            if (exact != null)
+            {
+                return exact;
+            }
+
+            return devices.FirstOrDefault(device =>
+                device.Name.StartsWith(name, StringComparison.Ordinal) ||
+                name.StartsWith(device.Name, StringComparison.Ordinal));
+        }
+
+        return null;
+    }
+
+    private static AudioDeviceInfo? ResolveDeviceInList(
+        IEnumerable<AudioDeviceInfo> devices,
+        AudioDeviceInfo? candidate)
+    {
+        var deviceList = devices as IList<AudioDeviceInfo> ?? devices.ToList();
+        if (deviceList.Count == 0)
+        {
+            return null;
+        }
+
+        if (candidate == null)
+        {
+            return deviceList[0];
+        }
+
+        return deviceList.FirstOrDefault(device =>
+                   device.Index == candidate.Index &&
+                   device.Name == candidate.Name)
+               ?? deviceList.FirstOrDefault(device => device.Index == candidate.Index)
+               ?? deviceList[0];
+    }
+
+    private void RegisterSavedPeerAddress(UiPreferences preferences)
+    {
+        if (string.IsNullOrWhiteSpace(preferences.PeerAddress))
+        {
+            return;
+        }
+
+        var address = NetworkEndpoints.NormalizeAddressString(preferences.PeerAddress);
+        if (!System.Net.IPAddress.TryParse(address, out _))
+        {
+            return;
+        }
+
+        _discovery.RegisterPeerAddress(address);
+    }
+
+    private bool TrySelectSavedPeer(UiPreferences preferences)
+    {
+        if (!string.IsNullOrEmpty(preferences.PeerId))
+        {
+            if (_peers.TryGetValue(preferences.PeerId, out var peerById))
+            {
+                SetSelectedPeerSilently(peerById);
+                return true;
+            }
+
+            var listedPeer = Peers.FirstOrDefault(peer => peer.Id == preferences.PeerId);
+            if (listedPeer != null)
+            {
+                SetSelectedPeerSilently(listedPeer);
+                return true;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(preferences.PeerAddress))
+        {
+            return _selectedPeer != null;
+        }
+
+        var normalized = NetworkEndpoints.NormalizeAddressString(preferences.PeerAddress);
+        var peerByAddress = _peers.Values.FirstOrDefault(peer =>
+            string.Equals(peer.Address, normalized, StringComparison.Ordinal) ||
+            peer.ConnectAddresses.Any(address =>
+                string.Equals(NetworkEndpoints.NormalizeAddressString(address), normalized, StringComparison.Ordinal)));
+
+        if (peerByAddress != null)
+        {
+            SetSelectedPeerSilently(peerByAddress);
+            return true;
+        }
+
+        return _selectedPeer != null;
+    }
+
+    private void SetSelectedPeerSilently(PeerInfo peer)
+    {
+        var listedPeer = Peers.FirstOrDefault(candidate => candidate.Id == peer.Id) ?? peer;
+        _selectedPeer = listedPeer;
+        _selectedPeerId = listedPeer.Id;
+        RememberPeerInPreferences(listedPeer);
+        RaisePropertyChanged(nameof(SelectedPeer));
+        RaisePropertyChanged(nameof(HasSelectedPeer));
+        UpdateDiscoveryScanning();
+    }
+
+    private async Task AutoConnectLoopAsync(CancellationToken cancellationToken)
+    {
+        if (!_loadedPreferences.AutoConnect)
+        {
+            return;
+        }
+
+        for (var attempt = 0; attempt < 60 && !cancellationToken.IsCancellationRequested; attempt++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+
+            var shouldRefresh = Dispatcher.UIThread.Invoke(() =>
+            {
+                if (!_uiPreferencesApplied)
+                {
+                    return false;
+                }
+
+                if (_selectedPeer == null)
+                {
+                    RegisterSavedPeerAddress(_loadedPreferences);
+                    TrySelectSavedPeer(_loadedPreferences);
+                }
+
+                return WantsSession &&
+                       (!_audioPathsRunning ||
+                        (_selectedPeer != null && !_audioConnection.IsConnectedToPeer(_selectedPeer)));
+            });
+
+            if (shouldRefresh)
+            {
+                SessionLog.Write(
+                    $"Auto-connect attempt {attempt + 1}: peer={_selectedPeer?.DisplayName ?? "none"}, " +
+                    $"connected={_audioConnection.IsConnectedToPeer(_selectedPeer!)}");
+                await RefreshSessionAsync();
+            }
+
+            if (_audioPathsRunning &&
+                _selectedPeer != null &&
+                _audioConnection.IsConnectedToPeer(_selectedPeer))
+            {
+                return;
+            }
+        }
     }
 
     private void OnPeerDiscovered(PeerInfo peer)
@@ -534,7 +1159,44 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         Dispatcher.UIThread.Post(() =>
         {
             UpsertPeer(peer);
+
+            if (_applyingPreferences ||
+                !_loadedPreferences.AutoConnect ||
+                _selectedPeer != null)
+            {
+                return;
+            }
+
+            var matchesId = !string.IsNullOrEmpty(_loadedPreferences.PeerId) &&
+                            peer.Id == _loadedPreferences.PeerId;
+            var matchesAddress = PeerMatchesSavedAddress(peer, _loadedPreferences.PeerAddress);
+
+            if (!matchesId && !matchesAddress)
+            {
+                return;
+            }
+
+            SetSelectedPeerSilently(peer);
+            SavePreferences();
+
+            if (WantsSession)
+            {
+                ScheduleAutoConnect();
+            }
         });
+    }
+
+    private static bool PeerMatchesSavedAddress(PeerInfo peer, string? savedAddress)
+    {
+        if (string.IsNullOrWhiteSpace(savedAddress))
+        {
+            return false;
+        }
+
+        var normalized = NetworkEndpoints.NormalizeAddressString(savedAddress);
+        return string.Equals(peer.Address, normalized, StringComparison.Ordinal) ||
+               peer.ConnectAddresses.Any(address =>
+                   string.Equals(NetworkEndpoints.NormalizeAddressString(address), normalized, StringComparison.Ordinal));
     }
 
     private void OnRemoteInputDeviceRequested(int deviceIndex)
@@ -577,8 +1239,11 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             _latencySettings.SetTargetLatencyMs(latencyMs);
             _manualBufferMs = latencyMs;
             BufferMs = latencyMs;
+            _bufferEditText = latencyMs.ToString();
+            RaisePropertyChanged(nameof(BufferEditText));
             _audioConnection.UpdateFrameDuration(_latencySettings.FrameDurationMs);
             UpdateFooterText();
+            SavePreferences();
             _ = RestartAudioPathsAsync();
         });
     }
@@ -658,7 +1323,19 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             peer = peer with { Id = canonicalId };
         }
 
-        RemoveDuplicatePeers(canonicalId, peer);
+        var duplicateIds = _peers.Values
+            .Where(existingPeer => existingPeer.Id != canonicalId && PeerMerge.SharesAddress(existingPeer, peer))
+            .Select(existingPeer => existingPeer.Id)
+            .ToList();
+
+        if (_selectedPeerId != null &&
+            (duplicateIds.Contains(_selectedPeerId) ||
+             _selectedPeerId == canonicalId ||
+             (_selectedPeer != null && PeerMerge.SharesAddress(_selectedPeer, peer))))
+        {
+            _selectedPeerId = canonicalId;
+        }
+
         peer = peer with { LastSeenUtc = DateTime.UtcNow };
 
         var connectedAddress = _audioConnection.ConnectedAddress;
@@ -684,15 +1361,6 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
         _peers[canonicalId] = peer;
 
-        if (_selectedPeerId != null &&
-            _selectedPeerId != canonicalId &&
-            (_selectedPeer == null || PeerMerge.SharesAddress(_selectedPeer, peer)))
-        {
-            _selectedPeerId = canonicalId;
-            _selectedPeer = peer;
-            RaisePropertyChanged(nameof(SelectedPeer));
-        }
-
         var existingIndex = -1;
         for (var i = 0; i < Peers.Count; i++)
         {
@@ -712,10 +1380,30 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             Peers.Add(peer);
         }
 
+        foreach (var duplicateId in duplicateIds)
+        {
+            _peers.Remove(duplicateId);
+
+            for (var i = Peers.Count - 1; i >= 0; i--)
+            {
+                if (Peers[i].Id == duplicateId)
+                {
+                    Peers.RemoveAt(i);
+                }
+            }
+        }
+
         if (_selectedPeerId == canonicalId)
         {
-            _selectedPeer = peer;
+            var listedPeer = Peers.FirstOrDefault(candidate => candidate.Id == canonicalId) ?? peer;
+            _selectedPeer = listedPeer;
+            RememberPeerInPreferences(listedPeer);
             RaisePropertyChanged(nameof(SelectedPeer));
+        }
+
+        if (duplicateIds.Count > 0 && _selectedPeerId == canonicalId)
+        {
+            ResyncSelectedPeerBinding();
         }
 
         return peer;
@@ -737,27 +1425,6 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         }
 
         return peer.Id;
-    }
-
-    private void RemoveDuplicatePeers(string canonicalId, PeerInfo peer)
-    {
-        var duplicateIds = _peers.Values
-            .Where(existing => existing.Id != canonicalId && PeerMerge.SharesAddress(existing, peer))
-            .Select(existing => existing.Id)
-            .ToList();
-
-        foreach (var duplicateId in duplicateIds)
-        {
-            _peers.Remove(duplicateId);
-
-            for (var i = Peers.Count - 1; i >= 0; i--)
-            {
-                if (Peers[i].Id == duplicateId)
-                {
-                    Peers.RemoveAt(i);
-                }
-            }
-        }
     }
 
     private void OnConnected(string remoteAddress)
@@ -789,15 +1456,23 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                     addresses.Add(normalizedRemote);
                 }
 
-                SelectedPeer = UpsertPeer(_selectedPeer with
+                SetSelectedPeerSilently(UpsertPeer(_selectedPeer with
                 {
                     Address = NetworkEndpoints.SelectBestPeerAddress(normalizedRemote, addresses),
                     AllAddresses = addresses
                         .Select(NetworkEndpoints.NormalizeAddressString)
                         .Distinct(StringComparer.Ordinal)
                         .ToArray(),
-                });
+                }));
             }
+        }
+
+        if (_audioPathsRunning &&
+            _selectedPeer != null &&
+            _audioConnection.IsConnectedToPeer(_selectedPeer))
+        {
+            UpdateDiscoveryScanning();
+            return;
         }
 
         _ = RefreshSessionAsync();
@@ -995,7 +1670,18 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
                         {
                             if (_selectedPeer?.Id == id)
                             {
-                                SelectedPeer = null;
+                                var replacement = Peers.FirstOrDefault(candidate =>
+                                    candidate.Id != id &&
+                                    PeerMerge.SharesAddress(candidate, _selectedPeer));
+
+                                if (replacement != null)
+                                {
+                                    SetSelectedPeerSilently(replacement);
+                                }
+                                else if (!WantsSession)
+                                {
+                                    SelectedPeer = null;
+                                }
                             }
 
                             Peers.RemoveAt(i);
@@ -1016,13 +1702,22 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
             if (_selectedPeer == null || !WantsSession)
             {
-                _streamingMicForPeer = false;
-                _audioConnection.Disconnect();
-                ConnectionPhase = ConnectionPhase.Idle;
-                _errorMessage = null;
-                UpdateDiscoveryScanning();
-                UpdateFooterText();
-                return;
+                if (_selectedPeer == null &&
+                    ShouldKeepSavedPeerSelection())
+                {
+                    RestoreSavedPeer(_loadedPreferences);
+                }
+
+                if (_selectedPeer == null || !WantsSession)
+                {
+                    _streamingMicForPeer = false;
+                    _audioConnection.Disconnect();
+                    ConnectionPhase = ConnectionPhase.Idle;
+                    _errorMessage = null;
+                    UpdateDiscoveryScanning();
+                    UpdateFooterText();
+                    return;
+                }
             }
 
             if (!_audioConnection.IsConnectedToPeer(_selectedPeer))
@@ -1044,6 +1739,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             _errorMessage = null;
             UpdateDiscoveryScanning();
             UpdateFooterText();
+            SavePreferences();
         }
         catch (Exception ex)
         {
@@ -1062,17 +1758,10 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
     {
         if (!_adaptiveSessionActive)
         {
-            if (IsBufferLocked)
-            {
-                _latencySettings.SetTargetLatencyMs(_manualBufferMs);
-            }
-            else
-            {
-                _latencySettings.Reset();
-                _manualBufferMs = AdaptiveLatencySettings.DefaultLatencyMs;
-            }
-
+            _latencySettings.SetTargetLatencyMs(SnapBufferMs(_manualBufferMs));
             BufferMs = _latencySettings.TargetLatencyMs;
+            _bufferEditText = _manualBufferMs.ToString();
+            RaisePropertyChanged(nameof(BufferEditText));
             _stableIntervalCount = 0;
             _badIntervalCount = 0;
             _adaptiveSessionActive = true;
@@ -1169,6 +1858,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        SavePreferences();
         _sessionCts.Cancel();
         StopAudioPaths();
         _capture.Dispose();

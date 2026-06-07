@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _viewModel;
+        Opened += (_, _) => _viewModel.CompleteUiInitialization();
         Closed += OnClosed;
     }
 

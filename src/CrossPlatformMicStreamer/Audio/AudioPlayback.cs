@@ -47,10 +47,14 @@ public sealed class AudioPlayback : IDisposable
         return Interlocked.Exchange(ref _underrunCount, 0);
     }
 
+    public int PeekUnderrunCount() => Volatile.Read(ref _underrunCount);
+
     public int ConsumeSaturatedTicks()
     {
         return Interlocked.Exchange(ref _saturatedTicks, 0);
     }
+
+    public int PeekSaturatedTicks() => Volatile.Read(ref _saturatedTicks);
 
     public void Start(int deviceIndex, AdaptiveLatencySettings settings)
     {

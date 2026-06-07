@@ -22,6 +22,8 @@ public sealed class MicrophoneCapture : IDisposable
         return Interlocked.Exchange(ref _droppedChunks, 0);
     }
 
+    public int PeekDroppedChunkCount() => Volatile.Read(ref _droppedChunks);
+
     public void Start(int deviceIndex, AdaptiveLatencySettings settings)
     {
         Stop();

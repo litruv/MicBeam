@@ -96,6 +96,30 @@ internal static class LucideGlyphs
                 "M7 11V7a5 5 0 0 1 9.9-1",
                 "M5 11h14v10H5v-10",
             ],
+            [LucideKind.Layers] =
+            [
+                "M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z",
+                "M22 12a1 1 0 0 0-.58-.91l-8.6-3.91a2 2 0 0 0-1.65 0l-8.58 3.9A1 1 0 0 0 2 12",
+                "M22 17a1 1 0 0 0-.58-.91l-8.6-3.91a2 2 0 0 0-1.65 0l-8.58 3.9A1 1 0 0 0 2 17",
+            ],
+            [LucideKind.Trash2] =
+            [
+                "M3 6h18",
+                "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
+                "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
+                "M10 11v6",
+                "M14 11v6",
+            ],
+            [LucideKind.TrendingUp] =
+            [
+                "M16 7h6v6",
+                "M22 7l-8.5 8.5-5-5L2 17",
+            ],
+            [LucideKind.TrendingDown] =
+            [
+                "M16 17h6v-6",
+                "M22 17l-8.5-8.5-5 5L2 7",
+            ],
         };
 
     public static IReadOnlyList<string> GetPaths(LucideKind kind) =>

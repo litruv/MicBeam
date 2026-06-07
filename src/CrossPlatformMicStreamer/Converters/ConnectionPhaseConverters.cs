@@ -87,3 +87,33 @@ public sealed class BoolToLucideKindConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+public sealed class BoolToStatForegroundConverter : IValueConverter
+{
+    public static BoolToStatForegroundConverter Instance { get; } = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        return value is true
+            ? Brush.Parse("#F59E0B")
+            : Brush.Parse("#94A3B8");
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+public sealed class BoolToStatBorderBrushConverter : IValueConverter
+{
+    public static BoolToStatBorderBrushConverter Instance { get; } = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        return value is true
+            ? Brush.Parse("#F59E0B")
+            : Brush.Parse("#334155");
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
