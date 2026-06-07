@@ -1,6 +1,6 @@
 # MicBeam
 
-Use a mic on one machine, hear it on another. MicBeam captures your microphone and sends it over the network as uncompressed PCM - handy when you want your Steam Deck mic on your Windows PC, or any other Windows/Linux combo on the same LAN (or Tailscale).
+Use a mic on one machine, hear it on another. MicBeam captures your microphone and sends it over the network as uncompressed PCM - handy when you want your Steam Deck mic on your Windows PC, or any other Windows/Linux combo on the same network.
 
 No accounts, no cloud relay. Pick a peer, pick Send or Receive, pick your audio device.
 
@@ -68,8 +68,9 @@ Requires .NET 8 SDK.
 dotnet run --project src/CrossPlatformMicStreamer
 ```
 
-To build the Linux AppImage locally:
+To build releases locally:
 
 ```powershell
+.\packaging\build-windows.ps1
 .\packaging\build-appimage.ps1
 ```
