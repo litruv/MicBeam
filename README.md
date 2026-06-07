@@ -68,9 +68,28 @@ Requires .NET 8 SDK.
 dotnet run --project src/CrossPlatformMicStreamer
 ```
 
-To build releases locally:
+### Build releases
+
+**Windows zip** (on Windows, PowerShell):
 
 ```powershell
 .\packaging\build-windows.ps1
+```
+
+Output: `dist/MicBeam-win-x64.zip`
+
+**Linux AppImage** (on Linux):
+
+```bash
+bash packaging/build-linux.sh
+```
+
+Needs Python 3 with Pillow (`pip install pillow`). Output: `dist/MicBeam-x86_64.AppImage`
+
+**Linux AppImage** (on Windows, via WSL + .NET SDK):
+
+```powershell
 .\packaging\build-appimage.ps1
 ```
+
+Same output: `dist/MicBeam-x86_64.AppImage`

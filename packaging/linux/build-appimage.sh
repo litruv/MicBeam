@@ -9,8 +9,9 @@ APPIMAGETOOL="$ROOT/tools/appimagetool-x86_64.AppImage"
 
 if [[ ! -f "$PUBLISH_DIR/CrossPlatformMicStreamer" ]]; then
   echo "Missing Linux publish output at: $PUBLISH_DIR/CrossPlatformMicStreamer"
-  echo "Run this first from the repo root:"
-  echo "  .\\packaging\\build-appimage.ps1"
+  echo "Run one of these first from the repo root:"
+  echo "  bash packaging/build-linux.sh"
+  echo "  .\\packaging\\build-appimage.ps1   (Windows + WSL)"
   exit 1
 fi
 
